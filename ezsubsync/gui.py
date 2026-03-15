@@ -116,10 +116,13 @@ class EzSubSyncApp:
         ttk.Entry(parent, textvariable=var, width=45).grid(row=row, column=1, sticky="ew", padx=4)
         parent.columnconfigure(1, weight=1)
 
-        if save:
-            cmd = lambda: var.set(filedialog.asksaveasfilename(filetypes=filetypes, defaultextension=".srt"))
-        else:
-            cmd = lambda: var.set(filedialog.askopenfilename(filetypes=filetypes))
+        def browse_save():
+            var.set(filedialog.asksaveasfilename(filetypes=filetypes, defaultextension=".srt"))
+
+        def browse_open():
+            var.set(filedialog.askopenfilename(filetypes=filetypes))
+
+        cmd = browse_save if save else browse_open
         ttk.Button(parent, text="Browse…", command=cmd).grid(row=row, column=2)
 
     # ------------------------------------------------------------------ logging
