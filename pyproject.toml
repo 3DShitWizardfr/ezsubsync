@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ezsubsync"
+version = "0.1.0"
+description = "Subtitle syncing made easy"
+readme = "README.md"
+license = {text = "GPL-3.0"}
+requires-python = ">=3.9"
+dependencies = [
+    "openai-whisper>=20231117",
+    "pysrt>=1.1.2",
+    "opencv-python>=4.8.0",
+    "pytesseract>=0.3.10",
+    "numpy>=1.24.0",
+]
+
+[project.scripts]
+ezsubsync = "ezsubsync.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
