@@ -1,15 +1,18 @@
 """Tests for the CLI entry point."""
 
-from ezsubsync.__main__ import build_parser
+import sys
+from unittest.mock import MagicMock, patch
+
+from ezsubsync.__main__ import build_parser, main
 
 
 class TestBuildParser:
-    def test_required_target(self):
+    def test_no_args_parses_ok(self):
         parser = build_parser()
-        # --target is required
-        import pytest
-        with pytest.raises(SystemExit):
-            parser.parse_args([])
+        # No args should parse without error (GUI will be launched)
+        args = parser.parse_args([])
+        assert args.target is None
+        assert args.gui is False
 
     def test_defaults(self):
         parser = build_parser()
@@ -22,7 +25,7 @@ class TestBuildParser:
 
     def test_gui_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["-t", "x.srt", "--gui"])
+        args = parser.parse_args(["--gui"])
         assert args.gui is True
 
     def test_all_options(self):
@@ -49,3 +52,25 @@ class TestBuildParser:
         assert args.ocr is True
         assert args.cross_validate is True
         assert args.verbose is True
+
+
+class TestMainGuiLaunch:
+    def test_no_args_launches_gui(self):
+        """Running with no arguments should launch the GUI."""
+        mock_gui = MagicMock()
+        with patch.dict(sys.modules, {"ezsubsync.gui": mock_gui}):
+            assert main([]) == 0
+            mock_gui.run_gui.assert_called_once()
+
+    def test_gui_flag_launches_gui(self):
+        """Running with --gui should launch the GUI."""
+        mock_gui = MagicMock()
+        with patch.dict(sys.modules, {"ezsubsync.gui": mock_gui}):
+            assert main(["--gui"]) == 0
+            mock_gui.run_gui.assert_called_once()
+
+    def test_target_without_ref_or_video_errors(self):
+        """CLI mode with --target but no --reference/--video should fail."""
+        import pytest
+        with pytest.raises(SystemExit):
+            main(["-t", "subs.srt"])

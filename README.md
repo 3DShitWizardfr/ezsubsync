@@ -34,8 +34,16 @@ Optional system dependencies:
 
 ### GUI
 
+Launch the GUI by simply running ezsubsync with no arguments:
+
 ```bash
-python -m ezsubsync --gui -t target.srt
+python -m ezsubsync
+```
+
+You can also explicitly request the GUI with the `--gui` flag:
+
+```bash
+python -m ezsubsync --gui
 ```
 
 ### CLI examples
