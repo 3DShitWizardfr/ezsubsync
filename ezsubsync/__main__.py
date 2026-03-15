@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reference subtitle file (language A, correctly timed).",
     )
     parser.add_argument(
-        "-t", "--target", required=True,
+        "-t", "--target",
         help="Target subtitle file (language B, needs synchronisation).",
     )
     parser.add_argument(
@@ -96,13 +96,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         format="%(levelname)s: %(message)s",
     )
 
-    # Launch GUI if requested
-    if args.gui:
+    # Launch GUI when explicitly requested or when no arguments are given
+    if args.gui or (not args.target and not args.reference and not args.video):
         from .gui import run_gui
         run_gui()
         return 0
 
-    # Validate inputs
+    # Validate inputs for CLI mode
+    if not args.target:
+        parser.error("--target is required when running in CLI mode.")
+
     if not args.reference and not args.video:
         parser.error("Provide at least a --reference subtitle or a --video file.")
 
