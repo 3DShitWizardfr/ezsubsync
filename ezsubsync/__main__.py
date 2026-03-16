@@ -20,7 +20,11 @@ from .sync_engine import (
 
 
 def _progress(current: int, total: int, message: str) -> None:
-    print(f"  [{current}/{total}] {message}")
+    pct = int(100 * current / total) if total > 0 else 0
+    bar_width = 20
+    filled = int(bar_width * current / total) if total > 0 else 0
+    bar = "█" * filled + "░" * (bar_width - filled)
+    print(f"  {bar} {pct:3d}% | {message}")
 
 
 def build_parser() -> argparse.ArgumentParser:
