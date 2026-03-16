@@ -11,6 +11,12 @@ logger = logging.getLogger(__name__)
 
 ProgressCallback = Optional[Callable[[int, int, str], None]]
 
+# Progress percentage reserved for the model-loading phase (0 → _TRANSCRIBE_START).
+# The transcription itself occupies _TRANSCRIBE_START → _TRANSCRIBE_END, and 100%
+# is reported only after all segments have been collected.
+_TRANSCRIBE_START = 10
+_TRANSCRIBE_END = 99
+
 
 class _ProgressWriter:
     """Intercept Whisper's ``verbose=True`` stdout and forward to a callback."""
@@ -29,7 +35,7 @@ class _ProgressWriter:
             if stripped:
                 self._count += 1
                 self._cb(
-                    min(10 + self._count, 99), 100,
+                    min(_TRANSCRIBE_START + self._count, _TRANSCRIBE_END), 100,
                     f"Whisper: {stripped}",
                 )
         return len(text)
@@ -91,7 +97,7 @@ def transcribe(
 
     if progress_cb:
         file_size_mb = audio_path.stat().st_size / (1024 * 1024)
-        progress_cb(10, 100, f"Transcribing {audio_path.name} ({file_size_mb:.1f} MB) — this may take a while…")
+        progress_cb(_TRANSCRIBE_START, 100, f"Transcribing {audio_path.name} ({file_size_mb:.1f} MB) — this may take a while…")
 
     options: Dict[str, Any] = {"verbose": True}
     if language:

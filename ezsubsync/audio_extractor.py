@@ -8,13 +8,13 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Optional[Callable[[int, int, str], None]]
 
-_TIME_PATTERN = re.compile(r"out_time_us=(\-?\d+)")
+_TIME_PATTERN = re.compile(r"out_time_us=(-?\d+)")
 
 
 def check_ffmpeg() -> bool:
@@ -118,7 +118,7 @@ def extract_audio(
         raise RuntimeError(f"Failed to start ffmpeg: {exc}") from exc
 
     # Drain stderr in a background thread to prevent pipe deadlock
-    stderr_lines: list[str] = []
+    stderr_lines: List[str] = []
     stderr_thread = threading.Thread(
         target=lambda: stderr_lines.extend(process.stderr),  # type: ignore[union-attr]
         daemon=True,
