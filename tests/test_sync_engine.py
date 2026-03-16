@@ -106,8 +106,8 @@ class TestSyncBySequence:
         sync_by_sequence(reference, target, progress_cb=cb)
         assert len(calls) == 3
 
-    def test_preserves_target_duration(self):
-        """Duration of each synced subtitle should match the target's original duration."""
+    def test_uses_reference_timing(self):
+        """Both start and end times should come from the reference subtitle."""
         ref = parse_srt_string(textwrap.dedent("""\
             1
             00:00:01,000 --> 00:00:03,000
@@ -130,9 +130,12 @@ class TestSyncBySequence:
         # Start times come from reference
         assert result.synced[0].start_ms == 1_000
         assert result.synced[1].start_ms == 5_000
-        # Durations come from target (4500ms and 5200ms)
-        assert result.synced[0].duration_ms == 4_500
-        assert result.synced[1].duration_ms == 5_200
+        # End times come from reference
+        assert result.synced[0].end_ms == 3_000
+        assert result.synced[1].end_ms == 7_000
+        # Durations match reference (2000ms each)
+        assert result.synced[0].duration_ms == 2_000
+        assert result.synced[1].duration_ms == 2_000
 
     def test_progress_messages_contain_timestamp(self):
         calls = []
@@ -184,8 +187,8 @@ class TestSyncBySimilarity:
         result = sync_by_similarity(ref, empty)
         assert len(result.synced) == 0
 
-    def test_preserves_target_duration(self):
-        """Duration should come from target, not reference."""
+    def test_uses_reference_timing(self):
+        """Both start and end times should come from the reference."""
         ref = parse_srt_string(textwrap.dedent("""\
             1
             00:00:01,000 --> 00:00:03,000
@@ -198,7 +201,8 @@ class TestSyncBySimilarity:
         """))
         result = sync_by_similarity(ref, tgt, threshold=0.5)
         assert result.synced[0].start_ms == 1_000
-        assert result.synced[0].duration_ms == 5_500
+        assert result.synced[0].end_ms == 3_000
+        assert result.synced[0].duration_ms == 2_000
 
 
 # ---- sync_by_linear_shift ----
@@ -249,8 +253,8 @@ class TestSyncToTranscript:
         assert len(result.synced) == 3
         assert result.stats["matched"] == 0
 
-    def test_preserves_target_duration(self):
-        """Transcript sync should keep the target's original duration."""
+    def test_uses_transcript_timing(self):
+        """Both start and end times should come from the transcript segment."""
         segments = [
             {"start": 1.0, "end": 4.0, "text": "Hello world"},
         ]
@@ -261,8 +265,9 @@ class TestSyncToTranscript:
         """))
         result = sync_to_transcript(segments, tgt)
         assert result.synced[0].start_ms == 1_000
-        # Duration should be preserved from target: 6200ms
-        assert result.synced[0].duration_ms == 6_200
+        # End time should come from transcript segment (4.0s = 4000ms)
+        assert result.synced[0].end_ms == 4_000
+        assert result.synced[0].duration_ms == 3_000
 
 
 # ---- cross_validate ----

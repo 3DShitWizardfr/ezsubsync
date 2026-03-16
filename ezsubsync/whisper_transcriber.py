@@ -3,12 +3,45 @@
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Optional[Callable[[int, int, str], None]]
+
+
+class _ProgressWriter:
+    """Intercept Whisper's ``verbose=True`` stdout and forward to a callback."""
+
+    def __init__(self, original_stdout: Any, progress_cb: Callable[[int, int, str], None]) -> None:
+        self._original = original_stdout
+        self._cb = progress_cb
+        self._buf = ""
+        self._count = 0
+
+    def write(self, text: str) -> int:
+        self._buf += text
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            stripped = line.strip()
+            if stripped:
+                self._count += 1
+                self._cb(
+                    min(10 + self._count, 99), 100,
+                    f"Whisper: {stripped}",
+                )
+        return len(text)
+
+    def flush(self) -> None:
+        pass
+
+    def isatty(self) -> bool:
+        return False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._original, name)
 
 
 def _load_whisper_model(model_name: str = "base") -> Any:
@@ -60,28 +93,27 @@ def transcribe(
         file_size_mb = audio_path.stat().st_size / (1024 * 1024)
         progress_cb(10, 100, f"Transcribing {audio_path.name} ({file_size_mb:.1f} MB) — this may take a while…")
 
-    options: Dict[str, Any] = {}
+    options: Dict[str, Any] = {"verbose": True}
     if language:
         options["language"] = language
 
-    result = model.transcribe(str(audio_path), **options)
+    # Capture Whisper's verbose stdout and forward each decoded line
+    # to the progress callback so the user sees real-time transcription.
+    if progress_cb:
+        writer = _ProgressWriter(sys.stdout, progress_cb)
+        old_stdout = sys.stdout
+        sys.stdout = writer  # type: ignore[assignment]
+        try:
+            result = model.transcribe(str(audio_path), **options)
+        finally:
+            sys.stdout = old_stdout
+    else:
+        result = model.transcribe(str(audio_path), **options)
 
     segments: List[Dict[str, object]] = []
     raw_segments = result.get("segments", [])
-    total_seg = len(raw_segments)
 
-    for i, seg in enumerate(raw_segments):
-        if progress_cb:
-            pct = 10 + int(90 * (i + 1) / max(total_seg, 1))
-            seg_start = float(seg["start"])
-            seg_end = float(seg["end"])
-            seg_text = str(seg.get("text", "")).strip()
-            progress_cb(
-                pct, 100,
-                f"Segment {i + 1}/{total_seg}: "
-                f"{seg_start:.1f}s–{seg_end:.1f}s — \"{seg_text[:50]}\"",
-            )
-
+    for seg in raw_segments:
         segments.append({
             "start": float(seg["start"]),
             "end": float(seg["end"]),
@@ -89,7 +121,7 @@ def transcribe(
         })
 
     if progress_cb:
-        progress_cb(100, 100, "Transcription complete")
+        progress_cb(100, 100, f"Transcription complete — {len(segments)} segments")
 
     logger.info("Transcribed %d segments from %s", len(segments), audio_path)
     return segments
