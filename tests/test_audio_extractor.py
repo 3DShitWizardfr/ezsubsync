@@ -1,6 +1,7 @@
 """Tests for audio_extractor module."""
 
-from unittest.mock import patch
+import subprocess
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -34,9 +35,45 @@ class TestExtractAudio:
         video.write_bytes(b"\x00")
         expected_out = tmp_path / "test_audio.wav"
 
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter([])
+        mock_proc.stderr = iter([])
+        mock_proc.wait.return_value = 0
+        mock_proc.returncode = 0
+
         with patch("ezsubsync.audio_extractor.check_ffmpeg", return_value=True), \
-             patch("subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
+             patch("ezsubsync.audio_extractor._get_video_duration_ms", return_value=None), \
+             patch("subprocess.Popen", return_value=mock_proc):
             result = extract_audio(video)
             assert result == expected_out
-            mock_run.assert_called_once()
+
+    def test_progress_callback_reports_percentage(self, tmp_path):
+        """Progress callback should receive percentage updates during extraction."""
+        video = tmp_path / "test.mp4"
+        video.write_bytes(b"\x00")
+
+        mock_proc = MagicMock()
+        # Simulate ffmpeg progress output
+        mock_proc.stdout = iter([
+            "out_time_us=5000000\n",
+            "progress=continue\n",
+            "out_time_us=10000000\n",
+            "progress=end\n",
+        ])
+        mock_proc.stderr = iter([])
+        mock_proc.wait.return_value = 0
+        mock_proc.returncode = 0
+
+        calls = []
+        def cb(c, t, m): calls.append((c, t, m))
+
+        with patch("ezsubsync.audio_extractor.check_ffmpeg", return_value=True), \
+             patch("ezsubsync.audio_extractor._get_video_duration_ms", return_value=20_000), \
+             patch("subprocess.Popen", return_value=mock_proc):
+            extract_audio(video, progress_cb=cb)
+
+        # Should have: start message, 25% (5s/20s), 50% (10s/20s), complete
+        messages = [m for _, _, m in calls]
+        assert any("25%" in m for m in messages)
+        assert any("50%" in m for m in messages)
+        assert any("complete" in m.lower() for m in messages)

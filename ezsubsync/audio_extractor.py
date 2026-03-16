@@ -3,19 +3,48 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import subprocess
+import threading
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Optional[Callable[[int, int, str], None]]
 
+_TIME_PATTERN = re.compile(r"out_time_us=(-?\d+)")
+
 
 def check_ffmpeg() -> bool:
     """Return *True* if ``ffmpeg`` is available on the system PATH."""
     return shutil.which("ffmpeg") is not None
+
+
+def _get_video_duration_ms(video_path: Path) -> Optional[int]:
+    """Return the duration of a video file in milliseconds via *ffprobe*."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                ffprobe, "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(video_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return int(float(result.stdout.strip()) * 1000)
+    except (subprocess.TimeoutExpired, ValueError):
+        pass
+    return None
 
 
 def extract_audio(
@@ -56,8 +85,13 @@ def extract_audio(
         output_path = video_path.with_name(f"{video_path.stem}_audio.wav")
     output_path = Path(output_path)
 
+    duration_ms = _get_video_duration_ms(video_path)
+
     if progress_cb:
-        progress_cb(0, 100, "Extracting audio from video…")
+        if duration_ms:
+            progress_cb(0, 100, f"Extracting audio from video ({duration_ms // 1000}s)…")
+        else:
+            progress_cb(0, 100, "Extracting audio from video…")
 
     cmd = [
         "ffmpeg", "-y",
@@ -68,24 +102,54 @@ def extract_audio(
     ]
     if mono:
         cmd.extend(["-ac", "1"])
+    cmd.extend(["-progress", "pipe:1"])
     cmd.append(str(output_path))
 
     logger.info("Running: %s", " ".join(cmd))
 
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=600,
-            check=False,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("ffmpeg timed out during audio extraction") from exc
+    except OSError as exc:
+        raise RuntimeError(f"Failed to start ffmpeg: {exc}") from exc
 
-    if result.returncode != 0:
+    # Drain stderr in a background thread to prevent pipe deadlock
+    stderr_lines: List[str] = []
+    stderr_thread = threading.Thread(
+        target=lambda: stderr_lines.extend(process.stderr),  # type: ignore[union-attr]
+        daemon=True,
+    )
+    stderr_thread.start()
+
+    try:
+        for line in process.stdout:  # type: ignore[union-attr]
+            m = _TIME_PATTERN.match(line.strip())
+            if m and progress_cb and duration_ms:
+                time_us = int(m.group(1))
+                if time_us > 0:
+                    current_ms = time_us // 1000
+                    pct = min(99, int(100 * current_ms / duration_ms))
+                    progress_cb(
+                        pct, 100,
+                        f"Extracting audio: {pct}% — "
+                        f"{current_ms // 1000}s / {duration_ms // 1000}s",
+                    )
+
+        process.wait(timeout=600)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        raise RuntimeError("ffmpeg timed out during audio extraction")
+    finally:
+        stderr_thread.join(timeout=5)
+
+    if process.returncode != 0:
         raise RuntimeError(
-            f"ffmpeg failed (exit {result.returncode}):\n{result.stderr}"
+            f"ffmpeg failed (exit {process.returncode}):\n{''.join(stderr_lines)}"
         )
 
     if progress_cb:

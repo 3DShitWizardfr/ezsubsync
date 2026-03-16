@@ -77,7 +77,7 @@ def sync_by_sequence(
             synced.append(Subtitle(
                 index=i + 1,
                 start_ms=ref.start_ms,
-                end_ms=ref.start_ms + tgt.duration_ms,
+                end_ms=ref.end_ms,
                 text=tgt.text,
             ))
             matched += 1
@@ -161,7 +161,7 @@ def sync_by_similarity(
             synced.append(Subtitle(
                 index=i + 1,
                 start_ms=ref.start_ms,
-                end_ms=ref.start_ms + tgt.duration_ms,
+                end_ms=ref.end_ms,
                 text=tgt.text,
             ))
             matched += 1
@@ -296,10 +296,11 @@ def sync_to_transcript(
         if best_ratio >= 0.3 and best_idx >= 0:
             seg = transcript_segments[best_idx]
             start_s = float(seg.get("start", 0))
+            end_s = float(seg.get("end", start_s))
             synced.append(Subtitle(
                 index=i + 1,
                 start_ms=int(start_s * 1000),
-                end_ms=int(start_s * 1000) + tgt.duration_ms,
+                end_ms=int(end_s * 1000),
                 text=tgt.text,
             ))
             matched += 1
