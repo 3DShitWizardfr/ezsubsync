@@ -57,7 +57,8 @@ def transcribe(
     model = _load_whisper_model(model_name)
 
     if progress_cb:
-        progress_cb(10, 100, "Transcribing audio…")
+        file_size_mb = audio_path.stat().st_size / (1024 * 1024)
+        progress_cb(10, 100, f"Transcribing {audio_path.name} ({file_size_mb:.1f} MB) — this may take a while…")
 
     options: Dict[str, Any] = {}
     if language:
@@ -72,7 +73,14 @@ def transcribe(
     for i, seg in enumerate(raw_segments):
         if progress_cb:
             pct = 10 + int(90 * (i + 1) / max(total_seg, 1))
-            progress_cb(pct, 100, f"Processing segment {i + 1}/{total_seg}")
+            seg_start = float(seg["start"])
+            seg_end = float(seg["end"])
+            seg_text = str(seg.get("text", "")).strip()
+            progress_cb(
+                pct, 100,
+                f"Segment {i + 1}/{total_seg}: "
+                f"{seg_start:.1f}s–{seg_end:.1f}s — \"{seg_text[:50]}\"",
+            )
 
         segments.append({
             "start": float(seg["start"]),

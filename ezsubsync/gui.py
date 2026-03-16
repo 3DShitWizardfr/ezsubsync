@@ -137,7 +137,9 @@ class EzSubSyncApp:
         if total > 0:
             pct = int(100 * current / total)
             self.progress_bar["value"] = pct
-        self.status_label.configure(text=message)
+            self.status_label.configure(text=f"{pct}% — {message}")
+        else:
+            self.status_label.configure(text=message)
         self._log(message)
         self.root.update_idletasks()
 

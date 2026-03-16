@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 
-from .srt_parser import Subtitle, SubtitleFile
+from .srt_parser import Subtitle, SubtitleFile, ms_to_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +70,14 @@ def sync_by_sequence(
 
     for i, tgt in enumerate(tgt_subs):
         if progress_cb:
-            progress_cb(i + 1, total, f"Aligning subtitle {i + 1}/{total}")
+            progress_cb(i + 1, total, f"Aligning subtitle {i + 1}/{total} — {ms_to_timestamp(tgt.start_ms)}")
 
         if i < len(ref_subs):
             ref = ref_subs[i]
             synced.append(Subtitle(
                 index=i + 1,
                 start_ms=ref.start_ms,
-                end_ms=ref.end_ms,
+                end_ms=ref.start_ms + tgt.duration_ms,
                 text=tgt.text,
             ))
             matched += 1
@@ -144,7 +144,7 @@ def sync_by_similarity(
 
     for i, tgt in enumerate(tgt_subs):
         if progress_cb:
-            progress_cb(i + 1, total, f"Matching subtitle {i + 1}/{total}")
+            progress_cb(i + 1, total, f"Matching subtitle {i + 1}/{total} — \"{tgt.text[:40]}\"")
 
         tgt_norm = _normalise(tgt.text)
         best_ratio = 0.0
@@ -161,7 +161,7 @@ def sync_by_similarity(
             synced.append(Subtitle(
                 index=i + 1,
                 start_ms=ref.start_ms,
-                end_ms=ref.end_ms,
+                end_ms=ref.start_ms + tgt.duration_ms,
                 text=tgt.text,
             ))
             matched += 1
@@ -227,11 +227,12 @@ def sync_by_linear_shift(
 
     synced: List[Subtitle] = []
     for i, tgt in enumerate(tgt_subs):
-        if progress_cb:
-            progress_cb(i + 1, total, f"Shifting subtitle {i + 1}/{total}")
-
         new_start = int(tgt.start_ms * scale + offset)
         new_end = int(tgt.end_ms * scale + offset)
+
+        if progress_cb:
+            progress_cb(i + 1, total, f"Shifting subtitle {i + 1}/{total} — {ms_to_timestamp(tgt.start_ms)} → {ms_to_timestamp(max(0, new_start))}")
+
         synced.append(Subtitle(
             index=i + 1,
             start_ms=max(0, new_start),
@@ -280,7 +281,7 @@ def sync_to_transcript(
 
     for i, tgt in enumerate(tgt_subs):
         if progress_cb:
-            progress_cb(i + 1, total, f"Matching to transcript {i + 1}/{total}")
+            progress_cb(i + 1, total, f"Matching to transcript {i + 1}/{total} — \"{tgt.text[:40]}\"")
 
         tgt_norm = _normalise(tgt.text)
         best_ratio = 0.0
@@ -295,11 +296,10 @@ def sync_to_transcript(
         if best_ratio >= 0.3 and best_idx >= 0:
             seg = transcript_segments[best_idx]
             start_s = float(seg.get("start", 0))
-            end_s = float(seg.get("end", 0))
             synced.append(Subtitle(
                 index=i + 1,
                 start_ms=int(start_s * 1000),
-                end_ms=int(end_s * 1000),
+                end_ms=int(start_s * 1000) + tgt.duration_ms,
                 text=tgt.text,
             ))
             matched += 1
@@ -345,7 +345,7 @@ def cross_validate(
 
     for i, sub in enumerate(subs):
         if progress_cb:
-            progress_cb(i + 1, total, f"Validating subtitle {i + 1}/{total}")
+            progress_cb(i + 1, total, f"Validating subtitle {i + 1}/{total} at {sub.start_str}")
 
         confirmed_by_transcript = False
         for seg in transcript_segments:
