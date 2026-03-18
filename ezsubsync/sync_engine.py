@@ -118,14 +118,16 @@ def sync_by_similarity(
 
     Uses ``difflib.SequenceMatcher`` to find the best match for each
     target subtitle among nearby reference subtitles. A temporal window
-    constrains the search to prevent matching far-apart subtitles.
+    constrains the search to prevent matching far-apart subtitles while
+    allowing for cross-language differences in sentence splitting.
 
     Args:
         reference: Correctly timed subtitle file (language A).
         target: Subtitle file that needs re-timing (language B).
         threshold: Minimum similarity ratio to accept a match.
         window_size: Max positions to search around expected match. Defaults
-            to 1/3 of reference length.
+            to 1/2 of reference length to account for different languages
+            that may split sentences differently.
         progress_cb: Optional callback ``(current, total, message)``.
 
     Returns:
@@ -134,17 +136,20 @@ def sync_by_similarity(
     ref_subs = reference.subtitles
     tgt_subs = target.subtitles
     total = len(tgt_subs)
+    ref_count = len(ref_subs)
 
-    if total == 0 or len(ref_subs) == 0:
+    if total == 0 or ref_count == 0:
         return SyncResult(
             synced=SubtitleFile(subtitles=list(tgt_subs), encoding=target.encoding),
             method="similarity",
             stats={"matched": 0, "total": total, "threshold": threshold},
         )
 
-    # Default window: search within ±1/3 of reference length around expected position
+    # Default window: search within ±1/2 of reference length to account for
+    # different languages that may split sentences into different numbers of
+    # subtitle lines (e.g., German/French sentences tend to be longer)
     if window_size is None:
-        window_size = max(5, len(ref_subs) // 3)
+        window_size = max(10, ref_count // 2)
 
     ref_texts = [_normalise(s.text) for s in ref_subs]
     synced: List[Subtitle] = []
@@ -155,10 +160,11 @@ def sync_by_similarity(
             progress_cb(i + 1, total, f"Matching subtitle {i + 1}/{total} — \"{tgt.text[:40]}\"")
 
         # Expected position in reference based on relative sequence position
-        expected_idx = int(i * len(ref_subs) / total)
+        # This accounts for cases where target has different number of subtitles
+        expected_idx = int(i * ref_count / total)
         # Search window around expected position
         start_j = max(0, expected_idx - window_size)
-        end_j = min(len(ref_subs), expected_idx + window_size + 1)
+        end_j = min(ref_count, expected_idx + window_size + 1)
 
         tgt_norm = _normalise(tgt.text)
         best_ratio = 0.0
