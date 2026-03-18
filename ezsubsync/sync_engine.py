@@ -43,8 +43,9 @@ def sync_by_sequence(
 ) -> SyncResult:
     """Align target subtitles to reference by sequential order.
 
-    Matches subtitles 1-to-1 by their position in the file.
-    Extra subtitles in the target are time-shifted proportionally.
+    Uses proportional mapping to handle cases where subtitle counts differ.
+    Each target subtitle is mapped to a position in the reference based on
+    its relative position in the target file.
 
     Args:
         reference: Correctly timed subtitle file (language A).
@@ -57,12 +58,20 @@ def sync_by_sequence(
     ref_subs = reference.subtitles
     tgt_subs = target.subtitles
     total = len(tgt_subs)
+    ref_count = len(ref_subs)
 
     if total == 0:
         return SyncResult(
             synced=SubtitleFile(subtitles=[], encoding=target.encoding),
             method="sequence",
             stats={"matched": 0, "total": 0},
+        )
+
+    if ref_count == 0:
+        return SyncResult(
+            synced=SubtitleFile(subtitles=list(tgt_subs), encoding=target.encoding),
+            method="sequence",
+            stats={"matched": 0, "total": total},
         )
 
     synced: List[Subtitle] = []
@@ -72,33 +81,20 @@ def sync_by_sequence(
         if progress_cb:
             progress_cb(i + 1, total, f"Aligning subtitle {i + 1}/{total} — {ms_to_timestamp(tgt.start_ms)}")
 
-        if i < len(ref_subs):
-            ref = ref_subs[i]
-            synced.append(Subtitle(
-                index=i + 1,
-                start_ms=ref.start_ms,
-                end_ms=ref.end_ms,
-                text=tgt.text,
-            ))
-            matched += 1
-        else:
-            # Extrapolate from the last matched pair
-            if ref_subs:
-                last_ref = ref_subs[-1]
-                offset = tgt.start_ms - tgt_subs[len(ref_subs) - 1].start_ms
-                synced.append(Subtitle(
-                    index=i + 1,
-                    start_ms=last_ref.end_ms + offset,
-                    end_ms=last_ref.end_ms + offset + tgt.duration_ms,
-                    text=tgt.text,
-                ))
-            else:
-                synced.append(Subtitle(
-                    index=i + 1,
-                    start_ms=tgt.start_ms,
-                    end_ms=tgt.end_ms,
-                    text=tgt.text,
-                ))
+        # Calculate proportional position in reference
+        # If target has 540 and reference has 418:
+        # target[0] -> ref[0], target[270] -> ref[209], target[539] -> ref[417]
+        ref_idx = int(i * ref_count / total)
+        ref_idx = min(ref_idx, ref_count - 1)  # Clamp to valid range
+
+        ref = ref_subs[ref_idx]
+        synced.append(Subtitle(
+            index=i + 1,
+            start_ms=ref.start_ms,
+            end_ms=ref.end_ms,
+            text=tgt.text,
+        ))
+        matched += 1
 
     return SyncResult(
         synced=SubtitleFile(subtitles=synced, encoding=target.encoding),

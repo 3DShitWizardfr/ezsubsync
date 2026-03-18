@@ -98,7 +98,8 @@ class TestSyncBySequence:
         """))
         result = sync_by_sequence(reference, extra)
         assert len(result.synced) == 4
-        assert result.stats["matched"] == 3
+        # With proportional mapping, all target subs are mapped to reference timings
+        assert result.stats["matched"] == 4
 
     def test_progress_callback(self, reference, target):
         calls = []
