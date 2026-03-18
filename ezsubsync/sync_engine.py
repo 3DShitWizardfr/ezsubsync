@@ -43,9 +43,9 @@ def sync_by_sequence(
 ) -> SyncResult:
     """Align target subtitles to reference by sequential order.
 
-    Uses proportional mapping to handle cases where subtitle counts differ.
-    Each target subtitle is mapped to a position in the reference based on
-    its relative position in the target file.
+    Uses pure line number mapping - ignores original timestamps and calculates
+    new timestamps purely from the proportional position in each file.
+    This is universal: works regardless of how different the two files are.
 
     Args:
         reference: Correctly timed subtitle file (language A).
@@ -74,32 +74,45 @@ def sync_by_sequence(
             stats={"matched": 0, "total": total},
         )
 
+    # Get the time span of the reference (from first to last subtitle)
+    ref_start = ref_subs[0].start_ms
+    ref_end = ref_subs[-1].start_ms
+    ref_span = ref_end - ref_start
+
     synced: List[Subtitle] = []
-    matched = 0
 
     for i, tgt in enumerate(tgt_subs):
         if progress_cb:
-            progress_cb(i + 1, total, f"Aligning subtitle {i + 1}/{total} — {ms_to_timestamp(tgt.start_ms)}")
+            progress_cb(i + 1, total, f"Aligning subtitle {i + 1}/{total}")
 
-        # Calculate proportional position in reference
-        # If target has 540 and reference has 418:
-        # target[0] -> ref[0], target[270] -> ref[209], target[539] -> ref[417]
+        # Pure proportional mapping: position i in target maps to
+        # position i * ref_count / total in reference
         ref_idx = int(i * ref_count / total)
-        ref_idx = min(ref_idx, ref_count - 1)  # Clamp to valid range
+        ref_idx = min(ref_idx, ref_count - 1)
 
-        ref = ref_subs[ref_idx]
+        # Calculate new timestamp as proportional position in reference span
+        position_ratio = i / max(1, total - 1)  # 0.0 to 1.0
+        new_start_ms = int(ref_start + (position_ratio * ref_span))
+        
+        # Estimate duration proportionally from reference
+        if ref_idx < ref_count - 1:
+            ref_duration = ref_subs[ref_idx + 1].start_ms - ref_subs[ref_idx].start_ms
+        else:
+            ref_duration = ref_subs[ref_idx].end_ms - ref_subs[ref_idx].start_ms
+
+        new_end_ms = new_start_ms + ref_duration
+
         synced.append(Subtitle(
             index=i + 1,
-            start_ms=ref.start_ms,
-            end_ms=ref.end_ms,
+            start_ms=new_start_ms,
+            end_ms=new_end_ms,
             text=tgt.text,
         ))
-        matched += 1
 
     return SyncResult(
         synced=SubtitleFile(subtitles=synced, encoding=target.encoding),
         method="sequence",
-        stats={"matched": matched, "total": total},
+        stats={"matched": total, "total": total},
     )
 
 

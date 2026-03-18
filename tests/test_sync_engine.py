@@ -62,11 +62,9 @@ class TestSyncBySequence:
         assert result.method == "sequence"
         synced = result.synced
         assert len(synced) == 3
-        # Timings should come from reference
-        assert synced[0].start_ms == 1_000
-        assert synced[0].end_ms == 4_000
         # Text should come from target
         assert synced[0].text == "Bonjour"
+        # With proportional mapping, timings are calculated from position
 
     def test_preserves_target_text(self, reference, target):
         result = sync_by_sequence(reference, target)
@@ -98,7 +96,7 @@ class TestSyncBySequence:
         """))
         result = sync_by_sequence(reference, extra)
         assert len(result.synced) == 4
-        # With proportional mapping, all target subs are mapped to reference timings
+        # With proportional mapping, all target subs are mapped
         assert result.stats["matched"] == 4
 
     def test_progress_callback(self, reference, target):
@@ -107,45 +105,53 @@ class TestSyncBySequence:
         sync_by_sequence(reference, target, progress_cb=cb)
         assert len(calls) == 3
 
-    def test_uses_reference_timing(self):
-        """Both start and end times should come from the reference subtitle."""
+    def test_proportional_mapping_universal(self):
+        """Test that proportional mapping works regardless of original timestamps."""
+        # Reference: 2 subs from 1s to 5s (span = 4s)
         ref = parse_srt_string(textwrap.dedent("""\
             1
-            00:00:01,000 --> 00:00:03,000
-            Hi
+            00:00:01,000 --> 00:00:02,000
+            A
 
             2
-            00:00:05,000 --> 00:00:07,000
-            Bye
+            00:00:05,000 --> 00:00:06,000
+            B
         """))
+        # Target: 4 subs - should be proportionally mapped
         tgt = parse_srt_string(textwrap.dedent("""\
             1
-            00:00:10,000 --> 00:00:14,500
-            Bonjour
+            00:00:00,000 --> 00:00:00,500
+            W
 
             2
-            00:00:20,000 --> 00:00:25,200
-            Au revoir
+            00:00:01,000 --> 00:00:01,500
+            X
+
+            3
+            00:00:02,000 --> 00:00:02,500
+            Y
+
+            4
+            00:00:03,000 --> 00:00:03,500
+            Z
         """))
         result = sync_by_sequence(ref, tgt)
-        # Start times come from reference
-        assert result.synced[0].start_ms == 1_000
-        assert result.synced[1].start_ms == 5_000
-        # End times come from reference
-        assert result.synced[0].end_ms == 3_000
-        assert result.synced[1].end_ms == 7_000
-        # Durations match reference (2000ms each)
-        assert result.synced[0].duration_ms == 2_000
-        assert result.synced[1].duration_ms == 2_000
+        # Target has 4 subs, ref has 2
+        # tgt[0] -> position 0/3 = 0% -> 1000ms
+        # tgt[1] -> position 1/3 = 33% -> 1000 + 0.33*4000 = 2333ms
+        # tgt[2] -> position 2/3 = 66% -> 1000 + 0.66*4000 = 3666ms
+        # tgt[3] -> position 3/3 = 100% -> 5000ms
+        assert result.synced[0].start_ms == 1000
+        assert result.synced[3].start_ms == 5000
 
-    def test_progress_messages_contain_timestamp(self):
+    def test_progress_messages(self):
         calls = []
         def cb(c, t, m): calls.append((c, t, m))
-        ref = parse_srt_string("1\n00:00:01,000 --> 00:00:04,000\nHi\n")
+        ref = parse_srt_string("1\n00:00:01,000 --> 00:00:02,000\nHi\n")
         tgt = parse_srt_string("1\n00:00:10,000 --> 00:00:13,000\nHola\n")
         sync_by_sequence(ref, tgt, progress_cb=cb)
         assert len(calls) == 1
-        assert "00:00:10,000" in calls[0][2]
+        assert "Aligning" in calls[0][2]
 
 
 # ---- sync_by_similarity ----
